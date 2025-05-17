@@ -52,6 +52,7 @@ io.on('connection', (socket) => {
             participantes: [socket.id]
         }
         socket.join(pin);
+        connectedSockets[socket.id] = pin;
         socket.emit('room_created', {pin: pin});
         io.to(pin).emit('user_joined', {user_id: socket.id});
         console.log(`Sala creada ${pin} con capacidad de ${capacity} por ${socket.id}`);
@@ -72,6 +73,9 @@ io.on('connection', (socket) => {
             socket.emit('join_error', {message: 'Ya estás en otra sala'});
             return;
         }
+
+        console.log(rooms[pin].capacidad);
+        console.log(rooms[pin].participantes.lenght);
         
         rooms[pin].participantes.push(socket.id);
         socket.join(pin);
