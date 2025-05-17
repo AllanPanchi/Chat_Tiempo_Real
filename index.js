@@ -48,7 +48,7 @@ io.on('connection', (socket) => {
         const pin = generatePin();
         rooms[pin] = {
             pin: pin,
-            capacidad: capacity,
+            capacidad: parseInt(capacity),
             participantes: [socket.id]
         }
         socket.join(pin);
@@ -56,6 +56,7 @@ io.on('connection', (socket) => {
         socket.emit('room_created', {pin: pin});
         io.to(pin).emit('user_joined', {user_id: socket.id});
         console.log(`Sala creada ${pin} con capacidad de ${capacity} por ${socket.id}`);
+        console.log(`Participantes en la sala ${pin}: ${rooms[pin].participantes}`);
     });
 
     socket.on('join_room', (pin) => {
@@ -64,7 +65,7 @@ io.on('connection', (socket) => {
             return;
         }
 
-        if(rooms[pin].participantes.lenght >= rooms[pin].capacidad){
+        if(rooms[pin].participantes.length >= rooms[pin].capacidad){
             socket.emit('join_error', {message: 'La sala está llena'});
             return;
         }
@@ -75,7 +76,8 @@ io.on('connection', (socket) => {
         }
 
         console.log(rooms[pin].capacidad);
-        console.log(rooms[pin].participantes.lenght);
+        console.log(rooms[pin].participantes);
+        console.log(rooms[pin].participantes.length);
         
         rooms[pin].participantes.push(socket.id);
         socket.join(pin);
