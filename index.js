@@ -5,20 +5,20 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const dns = require('dns');
-const { Socket } = require('dgram');
-const { connected } = require('process');
 
 const app = express();
 
-const rooms = {}
-const connectedSockets = {}
+const rooms = {};
+const connectedSockets = {};
 const connectedIps = {};
 
-function generatePin(){
+const IP_TIMEOUT = 10000; // 10 segundos para liberar IPs inactivas
+
+function generatePin() {
     let pin;
-    do{
+    do {
         pin = Math.floor(100000 + Math.random() * 900000).toString();
-    }while(rooms[pin])
+    } while (rooms[pin]);
     return pin;
 }
 
@@ -29,46 +29,55 @@ const allowedOrigins = [
 
 app.use(cors({
     origin: (origin, callback) => {
-        // Permitir solicitudes sin origen (como Postman o curl) o si el origen está en la lista
         if (!origin || allowedOrigins.includes(origin)) {
             callback(null, true);
         } else {
             callback(new Error('No permitido por CORS'));
         }
     },
-    credentials: true // Si necesitas enviar cookies o credenciales
+    credentials: true
 }));
 
 const server = http.createServer(app);
 
 const io = new Server(server, {
     cors: {
-        origin: allowedOrigins, // Usar la misma lista de orígenes permitidos
-        methods: ['GET', 'POST'], // Métodos permitidos
-        credentials: true // Si necesitas credenciales
+        origin: allowedOrigins,
+        methods: ['GET', 'POST'],
+        credentials: true
     }
 });
 
 io.on('connection', (socket) => {
-    const clienteIp = socket.handshake.address.replace('::ffff:', '');
-    console.log(`Cliente conectado: ${clienteIp}`);
+    const clientIp = socket.handshake.headers['x-forwarded-for']?.split(',')[0] || socket.handshake.address.replace('::ffff:', '');
+    console.log(`Cliente conectado: ${clientIp}`);
 
-    if (connectedIps[clienteIp]) {
+    // Validar si la IP ya está conectada
+    if (connectedIps[clientIp]) {
         socket.emit('connection_error', { message: 'Ya hay un usuario conectado desde este dispositivo (misma IP)' });
-        socket.disconnect(true); 
-        console.log(`Conexión rechazada: IP ${clienteIp} ya está en uso`);
+        socket.disconnect(true);
+        console.log(`Conexión rechazada: IP ${clientIp} ya está en uso`);
         return;
     }
-    connectedIps[clienteIp] = socket.id;
 
-    dns.reverse(clienteIp, (err, hostnames) => {
-        const hostname = err ? clienteIp : hostnames[0];
+    // Registrar la IP del socket
+    connectedIps[clientIp] = socket.id;
+
+    // Configurar un temporizador para liberar la IP si no se desconecta correctamente
+    const ipTimeout = setTimeout(() => {
+        if (connectedIps[clientIp] === socket.id) {
+            delete connectedIps[clientIp];
+            console.log(`IP ${clientIp} liberada por timeout`);
+        }
+    }, IP_TIMEOUT);
+
+    dns.reverse(clientIp, (err, hostnames) => {
+        const hostname = err ? clientIp : hostnames[0];
         console.log(`Cliente Hostname: ${hostname}`);
-        socket.emit('host_info', { ip: clienteIp, host: hostname });
+        socket.emit('host_info', { ip: clientIp, host: hostname });
     });
 
     socket.on('create_room', (capacity) => {
-
         const parsedCapacity = parseInt(capacity);
         if (isNaN(parsedCapacity) || parsedCapacity <= 0) {
             socket.emit('create_error', { message: 'Capacidad inválida' });
@@ -78,25 +87,25 @@ io.on('connection', (socket) => {
         const pin = generatePin();
         rooms[pin] = {
             pin: pin,
-            capacidad: parseInt(capacity),
+            capacidad: parsedCapacity,
             participantes: [socket.id]
-        }
+        };
         socket.join(pin);
         connectedSockets[socket.id] = pin;
-        socket.emit('room_created', {pin: pin});
-        io.to(pin).emit('user_joined', {user_id: socket.id});
+        socket.emit('room_created', { pin: pin });
+        io.to(pin).emit('user_joined', { user_id: socket.id });
         console.log(`Sala creada ${pin} con capacidad de ${capacity} por ${socket.id}`);
         console.log(`Participantes en la sala ${pin}: ${rooms[pin].participantes}`);
     });
 
     socket.on('join_room', (pin) => {
-        if(!rooms[pin]){
-            socket.emit('join_error', {message: 'El PIN de la sala no es válido'});
+        if (!rooms[pin]) {
+            socket.emit('join_error', { message: 'El PIN de la sala no es válido' });
             return;
         }
 
-        if(rooms[pin].participantes.length >= rooms[pin].capacidad){
-            socket.emit('join_error', {message: 'La sala está llena'});
+        if (rooms[pin].participantes.length >= rooms[pin].capacidad) {
+            socket.emit('join_error', { message: 'La sala está llena' });
             return;
         }
 
@@ -105,17 +114,12 @@ io.on('connection', (socket) => {
             return;
         }
 
-        console.log(rooms[pin].capacidad);
-        console.log(rooms[pin].participantes);
-        console.log(rooms[pin].participantes.length);
-        
         rooms[pin].participantes.push(socket.id);
         socket.join(pin);
         connectedSockets[socket.id] = pin;
         socket.emit('join_success');
         io.to(pin).emit('user_joined', { userId: socket.id });
         console.log(`Usuario ${socket.id} se unió a la sala ${pin}`);
-
     });
 
     socket.on('send_message', (data) => {
@@ -127,24 +131,24 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
+        clearTimeout(ipTimeout); // Cancelar el temporizador
         const roomId = connectedSockets[socket.id];
         if (roomId && rooms[roomId]) {
             rooms[roomId].participantes = rooms[roomId].participantes.filter(id => id !== socket.id);
             io.to(roomId).emit('user_left', { userId: socket.id });
-            delete connectedSockets[socket.id];
             console.log(`Usuario ${socket.id} se desconectó de la sala ${roomId}`);
             if (rooms[roomId].participantes.length === 0) {
-                delete rooms[roomId]; 
+                delete rooms[roomId];
                 console.log(`Sala ${roomId} eliminada por estar vacía.`);
             }
         }
-        delete connectedIps[clienteIp];
+        delete connectedIps[clientIp];
         delete connectedSockets[socket.id];
-        console.log(`Cliente desconectado: ${clienteIp}`);
+        console.log(`Cliente desconectado: ${clientIp}`);
     });
 });
 
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 
 server.listen(PORT, () => {
     console.log(`Servidor corriendo en el puerto: ${PORT}`);
