@@ -12,7 +12,7 @@ const rooms = {};
 const connectedSockets = {};
 const connectedIps = {};
 
-const IP_TIMEOUT = 10000; // 10 segundos para liberar IPs inactivas
+const IP_TIMEOUT = 15000; // Aumentado a 15 segundos para evitar liberaciones prematuras
 
 function generatePin() {
     let pin;
@@ -50,9 +50,10 @@ const io = new Server(server, {
 
 io.on('connection', (socket) => {
     // Obtener IP del cliente, manejando proxies
-    const clientIp = socket.handshake.headers['x-forwarded-for']?.split(',')[0]?.trim() || 
-                     socket.handshake.address.replace('::ffff:', '');
+    const clientIp = (socket.handshake.headers['x-forwarded-for']?.split(',')[0]?.trim() || 
+                     socket.handshake.address.replace('::ffff:', '') || 'unknown').toLowerCase();
     console.log(`Cliente intentando conectar: IP=${clientIp}, SocketID=${socket.id}`);
+    console.log(`Estado actual de connectedIps: ${JSON.stringify(connectedIps)}`);
 
     // Validar si la IP ya está conectada
     if (connectedIps[clientIp]) {
@@ -75,7 +76,7 @@ io.on('connection', (socket) => {
     }, IP_TIMEOUT);
 
     dns.reverse(clientIp, (err, hostnames) => {
-        const hostname = err ? clientIp : hostnames[0];
+        const hostname = err ? clientIp : hostnames[0] || 'unknown';
         console.log(`Cliente Hostname: ${hostname}`);
         socket.emit('host_info', { ip: clientIp, host: hostname });
     });
@@ -148,7 +149,7 @@ io.on('connection', (socket) => {
         delete connectedIps[clientIp];
         delete connectedSockets[socket.id];
         console.log(`Cliente desconectado: IP=${clientIp}, SocketID=${socket.id}`);
-        console.log(`Estado de connectedIps: ${JSON.stringify(connectedIps)}`);
+        console.log(`Estado de connectedIps tras desconexión: ${JSON.stringify(connectedIps)}`);
     });
 });
 
