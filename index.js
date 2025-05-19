@@ -22,15 +22,30 @@ function generatePin(){
     return pin;
 }
 
+const allowedOrigins = [
+    'http://localhost:3000', // Para desarrollo local
+    'https://ransilvav29.github.io' // Para el frontend en producción
+];
+
 app.use(cors({
-    origin: process.env.CORS_ORIGIN || 'http://localhost:3000'
+    origin: (origin, callback) => {
+        // Permitir solicitudes sin origen (como Postman o curl) o si el origen está en la lista
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('No permitido por CORS'));
+        }
+    },
+    credentials: true // Si necesitas enviar cookies o credenciales
 }));
 
 const server = http.createServer(app);
 
 const io = new Server(server, {
     cors: {
-        origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+        origin: allowedOrigins, // Usar la misma lista de orígenes permitidos
+        methods: ['GET', 'POST'], // Métodos permitidos
+        credentials: true // Si necesitas credenciales
     }
 });
 

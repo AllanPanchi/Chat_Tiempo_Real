@@ -16,7 +16,7 @@ interface hostInfo {
     ip: string;
 }
 
-const SOCKET_SERVER_URL = "http://10.40.16.201:5000/";
+const SOCKET_SERVER_URL = "https://chat-tiempo-real-za6s.onrender.com";
 
 const RoomControls: React.FC<{
     newRoomCapacity: string;
