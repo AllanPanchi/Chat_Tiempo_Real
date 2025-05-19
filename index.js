@@ -23,8 +23,8 @@ function generatePin() {
 }
 
 const allowedOrigins = [
-    'http://localhost:3000', // Para desarrollo local
-    'https://ransilvav29.github.io' // Para el frontend en producción
+    'http://localhost:3000',
+    'https://ransilvav29.github.io'
 ];
 
 app.use(cors({
@@ -49,19 +49,22 @@ const io = new Server(server, {
 });
 
 io.on('connection', (socket) => {
-    const clientIp = socket.handshake.headers['x-forwarded-for']?.split(',')[0] || socket.handshake.address.replace('::ffff:', '');
-    console.log(`Cliente conectado: ${clientIp}`);
+    // Obtener IP del cliente, manejando proxies
+    const clientIp = socket.handshake.headers['x-forwarded-for']?.split(',')[0]?.trim() || 
+                     socket.handshake.address.replace('::ffff:', '');
+    console.log(`Cliente intentando conectar: IP=${clientIp}, SocketID=${socket.id}`);
 
     // Validar si la IP ya está conectada
     if (connectedIps[clientIp]) {
+        console.log(`Conexión rechazada: IP ${clientIp} ya está en uso (SocketID existente: ${connectedIps[clientIp]})`);
         socket.emit('connection_error', { message: 'Ya hay un usuario conectado desde este dispositivo (misma IP)' });
         socket.disconnect(true);
-        console.log(`Conexión rechazada: IP ${clientIp} ya está en uso`);
         return;
     }
 
     // Registrar la IP del socket
     connectedIps[clientIp] = socket.id;
+    console.log(`IP ${clientIp} registrada para SocketID ${socket.id}`);
 
     // Configurar un temporizador para liberar la IP si no se desconecta correctamente
     const ipTimeout = setTimeout(() => {
@@ -131,7 +134,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', () => {
-        clearTimeout(ipTimeout); // Cancelar el temporizador
+        clearTimeout(ipTimeout);
         const roomId = connectedSockets[socket.id];
         if (roomId && rooms[roomId]) {
             rooms[roomId].participantes = rooms[roomId].participantes.filter(id => id !== socket.id);
@@ -144,7 +147,8 @@ io.on('connection', (socket) => {
         }
         delete connectedIps[clientIp];
         delete connectedSockets[socket.id];
-        console.log(`Cliente desconectado: ${clientIp}`);
+        console.log(`Cliente desconectado: IP=${clientIp}, SocketID=${socket.id}`);
+        console.log(`Estado de connectedIps: ${JSON.stringify(connectedIps)}`);
     });
 });
 
