@@ -4,6 +4,7 @@ import { Button } from 'primereact/button';
 import { Card } from 'primereact/card';
 import { InputTextarea } from 'primereact/inputtextarea';
 import { io } from 'socket.io-client';
+import IpError from './IpError';
 
 interface Message {
     author: string;
@@ -15,7 +16,7 @@ interface hostInfo {
     ip: string;
 }
 
-const SOCKET_SERVER_URL = "http://localhost:5000/";
+const SOCKET_SERVER_URL = "http://10.40.16.201:5000/";
 
 const RoomControls: React.FC<{
     newRoomCapacity: string;
@@ -94,6 +95,7 @@ export const Chat: React.FC = () => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [connected, setConnected] = useState<Boolean>(false);
     const [host, setHost] = useState<hostInfo>({ host: "", ip: "" });
+    const [connectionError, setConnectionError] = useState<string>(""); // Nuevo estado para error de conexión
     const socketRef = useRef<any>(null);
 
     const [creatingRoom, setCreatingRoom] = useState<boolean>(false);
@@ -113,6 +115,13 @@ export const Chat: React.FC = () => {
         socketRef.current.on('host_info', (infoHost: hostInfo) => {
             setHost(infoHost);
             setConnected(true);
+            setConnectionError("");
+        });
+
+        socketRef.current.on('connection_error', (error: { message: string }) => {
+            setConnectionError(error.message);
+            setConnected(false);
+            socketRef.current.disconnect(); // Desconectar el socket
         });
 
         socketRef.current.on('receive_message', (msg: Message) => {
@@ -193,6 +202,22 @@ export const Chat: React.FC = () => {
         setMessages(prev => [...prev, msgObj]);
         setMessage("");
     };
+
+    const handleRetryConnection = () => {
+        setConnectionError(""); // Limpiar el error
+        setNickname(""); // Reiniciar el nickname para volver al formulario inicial
+        // El useEffect se encargará de intentar reconectar cuando se ingrese un nuevo nickname
+    };
+
+    // Mostrar el componente de error si hay un connection_error
+    if (connectionError) {
+        return (
+            <IpError
+                errorMessage={connectionError}
+                onRetry={handleRetryConnection}
+            />
+        );
+    }
 
     if (!nickname) {
         return (

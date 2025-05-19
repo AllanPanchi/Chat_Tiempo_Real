@@ -11,8 +11,8 @@ const { connected } = require('process');
 const app = express();
 
 const rooms = {}
-
 const connectedSockets = {}
+const connectedIps = {};
 
 function generatePin(){
     let pin;
@@ -38,6 +38,14 @@ io.on('connection', (socket) => {
     const clienteIp = socket.handshake.address.replace('::ffff:', '');
     console.log(`Cliente conectado: ${clienteIp}`);
 
+    if (connectedIps[clienteIp]) {
+        socket.emit('connection_error', { message: 'Ya hay un usuario conectado desde este dispositivo (misma IP)' });
+        socket.disconnect(true); 
+        console.log(`Conexión rechazada: IP ${clienteIp} ya está en uso`);
+        return;
+    }
+    connectedIps[clienteIp] = socket.id;
+
     dns.reverse(clienteIp, (err, hostnames) => {
         const hostname = err ? clienteIp : hostnames[0];
         console.log(`Cliente Hostname: ${hostname}`);
@@ -45,6 +53,13 @@ io.on('connection', (socket) => {
     });
 
     socket.on('create_room', (capacity) => {
+
+        const parsedCapacity = parseInt(capacity);
+        if (isNaN(parsedCapacity) || parsedCapacity <= 0) {
+            socket.emit('create_error', { message: 'Capacidad inválida' });
+            return;
+        }
+
         const pin = generatePin();
         rooms[pin] = {
             pin: pin,
@@ -70,8 +85,8 @@ io.on('connection', (socket) => {
             return;
         }
 
-        if(connectedSockets.id){
-            socket.emit('join_error', {message: 'Ya estás en otra sala'});
+        if (connectedSockets[socket.id]) {
+            socket.emit('join_error', { message: 'Ya estás en otra sala' });
             return;
         }
 
@@ -108,6 +123,8 @@ io.on('connection', (socket) => {
                 console.log(`Sala ${roomId} eliminada por estar vacía.`);
             }
         }
+        delete connectedIps[clienteIp];
+        delete connectedSockets[socket.id];
         console.log(`Cliente desconectado: ${clienteIp}`);
     });
 });
